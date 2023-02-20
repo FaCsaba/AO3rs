@@ -431,7 +431,7 @@ impl<T: QueryValue> Default for MultiSelect<T> {
 pub enum Category {
     /// Female / Female
     FF = 116,
-    
+
     /// Female / Male
     FM = 22,
 
@@ -445,7 +445,7 @@ pub enum Category {
     Multi = 2246,
 
     /// Other
-    Other = 24
+    Other = 24,
 }
 
 impl QueryValue for Category {
@@ -482,8 +482,8 @@ impl std::fmt::Display for Category {
 
 #[derive(Debug, Default, PartialEq, Eq, Clone)]
 pub enum SortBy {
-    #[default] BestMatch
-    // TODO: the rest of the sort bys
+    #[default]
+    BestMatch, // TODO: the rest of the sort bys
 }
 
 impl QueryValue for SortBy {
@@ -512,7 +512,7 @@ impl std::fmt::Display for SortBy {
 pub enum SortDirection {
     #[default]
     Descending,
-    Ascending
+    Ascending,
 }
 
 impl QueryValue for SortDirection {
@@ -602,7 +602,7 @@ pub struct AO3QueryBuilder {
     sort_by: SortBy,
 
     /// Sort direction
-    sort_direction: SortDirection
+    sort_direction: SortDirection,
 }
 
 impl AO3QueryBuilder {
@@ -802,9 +802,10 @@ impl AO3QueryBuilder {
     }
 
     /// Perform a simple search with a single query
-    pub fn simple_search(mut self, query: &str) {
+    pub async fn simple_search(mut self, query: &str) -> Result<(), Box<dyn std::error::Error>> {
         self.any_field = query.to_string();
-        self.send()
+        self.send().await?;
+        Ok(())
     }
 
     fn create_url(&self) -> String {
@@ -818,87 +819,118 @@ impl AO3QueryBuilder {
         }
         if self.any_field.is_included() {
             add_delim(&mut q, &mut is_first);
-            q.push_str(&format!("work_search[query]={}", self.any_field.to_query_value()))
+            q.push_str(&format!(
+                "work_search[query]={}",
+                self.any_field.to_query_value()
+            ))
         }
         if self.title.is_included() {
             add_delim(&mut q, &mut is_first);
-            q.push_str(&format!("work_search[title]={}", self.title.to_query_value()))
+            q.push_str(&format!(
+                "work_search[title]={}",
+                self.title.to_query_value()
+            ))
         }
         if self.authors.is_included() {
             add_delim(&mut q, &mut is_first);
-            q.push_str(&format!("work_search[authors]={}", self.authors.to_query_value()))
+            q.push_str(&format!(
+                "work_search[authors]={}",
+                self.authors.to_query_value()
+            ))
         }
         if self.date.is_included() {
             add_delim(&mut q, &mut is_first);
-            q.push_str(&format!("work_search[revised_at]={}", self.date.to_query_value()))
+            q.push_str(&format!(
+                "work_search[revised_at]={}",
+                self.date.to_query_value()
+            ))
         }
         if self.completion_status.is_included() {
             add_delim(&mut q, &mut is_first);
-            q.push_str(&format!("\tcompletion_status: {}", self.completion_status))
+            q.push_str(&format!(
+                "work_search[complete]={}",
+                self.completion_status.to_query_value()
+            ))
         };
+        if self.crossover_status.is_included() {
+            add_delim(&mut q, &mut is_first);
+            q.push_str(&format!(
+                "work_search[crossover]={}",
+                self.crossover_status.to_query_value()
+            ))
+        }
         if self.is_single_chapter.is_included() {
             add_delim(&mut q, &mut is_first);
-            q.push_str(&format!("\tis single chapter: {}", self.is_single_chapter()))
+            q.push_str(&format!(
+                "work_search[single_chapter]={}",
+                self.is_single_chapter().to_query_value()
+            ))
         }
         if self.word_count.is_included() {
             add_delim(&mut q, &mut is_first);
-            q.push_str(&format!("\tword count: {}", self.word_count))
+            q.push_str(&format!("work_search[word_count]={}", self.word_count.to_query_value()))
         }
         if self.fandoms.is_included() {
             add_delim(&mut q, &mut is_first);
-            q.push_str(&format!("\tfandoms: {}", self.fandoms))
+            q.push_str(&format!("work_search[fandom_names]={}", self.fandoms.to_query_value()))
         }
         if self.rating.is_included() {
             add_delim(&mut q, &mut is_first);
-            q.push_str(&format!("\trating: {}", self.rating))
+            q.push_str(&format!("work_search[rating_ids]={}", self.rating.to_query_value()))
         }
         if self.archive_warnings.is_included() {
-            add_delim(&mut q, &mut is_first);
-            q.push_str(&format!("\tarchive warnings: {}", self.archive_warnings))
+            self.archive_warnings.to_query_value().into_iter().for_each(|aw| {
+                add_delim(&mut q, &mut is_first);
+                q.push_str(&format!("work_search[archive_warning_ids][]={}", aw))
+            });
         }
         if self.categories.is_included() {
-            add_delim(&mut q, &mut is_first);
-            q.push_str(&format!("\tcategories: {}", self.categories))
+            self.categories.to_query_value().into_iter().for_each(|cat| {
+                add_delim(&mut q, &mut is_first);
+                q.push_str(&format!("work_search[category_ids][]={}", cat))
+            });
         }
         if self.characters.is_included() {
             add_delim(&mut q, &mut is_first);
-            q.push_str(&format!("\tcharacters: {}", self.characters))
+            q.push_str(&format!("work_search[character_names]={}", self.characters.to_query_value()))
         }
         if self.relationships.is_included() {
             add_delim(&mut q, &mut is_first);
-            q.push_str(&format!("\trelationships: {}", self.relationships))
+            q.push_str(&format!("work_search[relationship_name]={}", self.relationships.to_query_value()))
         }
         if self.additional_tags.is_included() {
             add_delim(&mut q, &mut is_first);
-            q.push_str(&format!("\tadditional tags: {}", self.additional_tags))
+            q.push_str(&format!("work_search[freeform_names]={}", self.additional_tags.to_query_value()))
         }
         if self.hits.is_included() {
             add_delim(&mut q, &mut is_first);
-            q.push_str(&format!("\thits: {}", self.hits))
+            q.push_str(&format!("work_search[hits]={}", self.hits.to_query_value()))
         }
         if self.kudos.is_included() {
             add_delim(&mut q, &mut is_first);
-            q.push_str(&format!("\tkudos: {}", self.kudos))
+            q.push_str(&format!("work_search[kudos_count]={}", self.kudos.to_query_value()))
         }
         if self.comments.is_included() {
             add_delim(&mut q, &mut is_first);
-            q.push_str(&format!("\tcomments: {}", self.comments))
+            q.push_str(&format!("work_search[commets_count]={}", self.comments.to_query_value()))
         }
         if self.bookmarks.is_included() {
             add_delim(&mut q, &mut is_first);
-            q.push_str(&format!("\tbookmarks: {}", self.bookmarks))
+            q.push_str(&format!("work_search[bookmarks_count]={}", self.bookmarks.to_query_value()))
         }
         add_delim(&mut q, &mut is_first);
-        q.push_str(&format!("\tSort by: {}", self.sort_by));
+        q.push_str(&format!("work_search[sort_column]={}", self.sort_by.to_query_value()));
         add_delim(&mut q, &mut is_first);
-        q.push_str(&format!("\tSort direction: {}", self.sort_direction));
+        q.push_str(&format!("work_search[sort_direction]={}", self.sort_direction.to_query_value()));
         q
     }
 
     /// Send query
-    pub fn send(self) {
-        self.create_url();
+    pub async  fn send(self) -> Result<String, Box<dyn std::error::Error>> {
+        let url = self.create_url();
+        let resp = reqwest::get(url).await?.text().await?;
 
+        Ok(resp)
     }
 }
 
@@ -917,6 +949,9 @@ impl std::fmt::Display for AO3QueryBuilder {
         if self.completion_status.is_included() {
             writeln!(f, "\tcompletion_status: {}", self.completion_status)?
         };
+        if self.crossover_status.is_included() {
+            writeln!(f, "\tcrossover: {}", self.crossover_status)?
+        }
         if self.is_single_chapter.is_included() {
             writeln!(f, "\tis single chapter: {}", self.is_single_chapter())?;
         }
@@ -966,11 +1001,10 @@ impl std::fmt::Display for AO3QueryBuilder {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_query_builder() {
-        println!(
-            "{}",
-            AO3QueryBuilder::new()
-        );
+    #[tokio::test]
+    async fn test_query_builder() {
+        let q = AO3QueryBuilder::new().set_kudos(NumericalValueRange::LessThan(5)).set_rating(Rating::Explicit);
+        println!("{}", q);
+        println!("{}", q.send().await.unwrap());
     }
 }

@@ -1,4 +1,5 @@
 pub mod query;
+mod parse;
 
 
 #[cfg(test)]
