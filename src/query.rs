@@ -1,9 +1,23 @@
+const BASE_AO3_SEARCH_URL: &'static str = "https://archiveofourown.org/works/search?";
+
 trait QueryValue: std::fmt::Display {
     type Output;
 
     fn to_query_value(&self) -> Self::Output;
 
     fn is_included(&self) -> bool;
+}
+
+impl QueryValue for String {
+    type Output = String;
+
+    fn to_query_value(&self) -> Self::Output {
+        self.to_string()
+    }
+
+    fn is_included(&self) -> bool {
+        !self.is_empty()
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -54,7 +68,7 @@ impl QueryValue for DateRange {
             DateRange::MoreThan(time, period) => format!("> {} {} ago", time, period),
             DateRange::LessThan(time, period) => format!("< {} {} ago", time, period),
             DateRange::Between(from_time, to_time, period) => {
-                format!("{}-{} {}", from_time, to_time, period.to_string())
+                format!("{}-{} {}", from_time, to_time, period)
             }
         }
     }
@@ -212,7 +226,7 @@ impl QueryValue for NumericalValueRange {
 
     fn to_query_value(&self) -> String {
         match self {
-            NumericalValueRange::None => format!(""),
+            NumericalValueRange::None => String::new(),
             NumericalValueRange::Exactly(num) => format!("{num}"),
             NumericalValueRange::MoreThan(num) => format!("> {num}"),
             NumericalValueRange::LessThan(num) => format!("< {num}"),
@@ -240,9 +254,9 @@ impl std::fmt::Display for NumericalValueRange {
 }
 
 #[derive(Debug, Default, PartialEq, Eq, Clone)]
-struct Fandoms(Vec<String>);
+struct MultiString(Vec<String>);
 
-impl QueryValue for Fandoms {
+impl QueryValue for MultiString {
     type Output = String;
 
     fn to_query_value(&self) -> String {
@@ -250,16 +264,37 @@ impl QueryValue for Fandoms {
     }
 
     fn is_included(&self) -> bool {
-        self.0.len() > 0
+        !self.0.is_empty()
     }
-
-    
 }
 
-impl std::fmt::Display for Fandoms {
+impl std::fmt::Display for MultiString {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "[ {} ]", self.0.join(", "))
     }
+}
+
+/// Rating given to a specific work
+#[derive(Debug, Default, PartialEq, Eq, Clone)]
+pub enum Rating {
+    /// We don't care what the rating is
+    #[default]
+    None,
+
+    /// Not rated fan fiction works
+    NotRated = 9,
+
+    /// Fan fiction works for general audiences
+    General = 10,
+
+    /// Fan fiction works for teens and up audiences
+    TeenAndUp = 11,
+
+    /// Fan fiction works for mature audiences
+    Mature = 12,
+
+    /// Fan fiction containing explicit content
+    Explicit = 13,
 }
 
 impl QueryValue for Rating {
@@ -267,7 +302,7 @@ impl QueryValue for Rating {
 
     fn to_query_value(&self) -> String {
         match self {
-            Rating::None => format!(""),
+            Rating::None => String::new(),
             Rating::Mature => (Rating::Mature as usize).to_string(),
             Rating::Explicit => (Rating::Explicit as usize).to_string(),
             Rating::NotRated => (Rating::NotRated as usize).to_string(),
@@ -279,7 +314,6 @@ impl QueryValue for Rating {
     fn is_included(&self) -> bool {
         self != &Self::None
     }
-    
 }
 
 impl std::fmt::Display for Rating {
@@ -348,17 +382,34 @@ impl std::fmt::Display for ArchiveWarning {
     }
 }
 
-#[derive(Debug, Default, PartialEq, Eq, Clone)]
-pub struct ArchiveWarnings(Vec<ArchiveWarning>);
+#[derive(Debug, PartialEq, Eq, Clone)]
+struct MultiSelect<T>(Vec<T>)
+where
+    T: QueryValue;
 
-impl std::fmt::Display for ArchiveWarnings {
+impl<T> std::fmt::Display for MultiSelect<T>
+where
+    T: QueryValue,
+{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // kinda wonky but seems like the most elegant solution for now
-        write!(f, "[ {} ]", self.0.iter().map(|aw| aw.to_string()).collect::<Vec<String>>().join(", "))
+        write!(
+            f,
+            "[ {} ]",
+            self.0
+                .iter()
+                .map(|aw| aw.to_string())
+                .collect::<Vec<String>>()
+                .join(", ")
+        )
     }
 }
 
-impl QueryValue for ArchiveWarnings {
+impl<T> QueryValue for MultiSelect<T>
+where
+    T: QueryValue,
+    Vec<String>: FromIterator<<T as QueryValue>::Output>,
+{
     type Output = Vec<String>;
 
     fn to_query_value(&self) -> Self::Output {
@@ -366,7 +417,125 @@ impl QueryValue for ArchiveWarnings {
     }
 
     fn is_included(&self) -> bool {
-        self.0.len() > 0
+        !self.0.is_empty()
+    }
+}
+
+impl<T: QueryValue> Default for MultiSelect<T> {
+    fn default() -> Self {
+        Self(Default::default())
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum Category {
+    /// Female / Female
+    FF = 116,
+    
+    /// Female / Male
+    FM = 22,
+
+    /// General
+    Gen = 21,
+
+    /// Male / Male
+    MM = 23,
+
+    /// Multi
+    Multi = 2246,
+
+    /// Other
+    Other = 24
+}
+
+impl QueryValue for Category {
+    type Output = String;
+
+    fn to_query_value(&self) -> Self::Output {
+        match self {
+            Category::FF => (Category::FF as usize).to_string(),
+            Category::FM => (Category::FM as usize).to_string(),
+            Category::Gen => (Category::Gen as usize).to_string(),
+            Category::MM => (Category::MM as usize).to_string(),
+            Category::Multi => (Category::Multi as usize).to_string(),
+            Category::Other => (Category::Other as usize).to_string(),
+        }
+    }
+
+    fn is_included(&self) -> bool {
+        true
+    }
+}
+
+impl std::fmt::Display for Category {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Category::FF => write!(f, "F/F"),
+            Category::FM => write!(f, "F/M"),
+            Category::Gen => write!(f, "Gen"),
+            Category::MM => write!(f, "M/M"),
+            Category::Multi => write!(f, "Multi"),
+            Category::Other => write!(f, "Other"),
+        }
+    }
+}
+
+#[derive(Debug, Default, PartialEq, Eq, Clone)]
+pub enum SortBy {
+    #[default] BestMatch
+    // TODO: the rest of the sort bys
+}
+
+impl QueryValue for SortBy {
+    type Output = String;
+
+    fn to_query_value(&self) -> Self::Output {
+        match self {
+            SortBy::BestMatch => format!("_score"),
+        }
+    }
+
+    fn is_included(&self) -> bool {
+        true
+    }
+}
+
+impl std::fmt::Display for SortBy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SortBy::BestMatch => write!(f, "Best Match"),
+        }
+    }
+}
+
+#[derive(Debug, Default, PartialEq, Eq, Clone)]
+pub enum SortDirection {
+    #[default]
+    Descending,
+    Ascending
+}
+
+impl QueryValue for SortDirection {
+    type Output = String;
+
+    fn to_query_value(&self) -> Self::Output {
+        match self {
+            SortDirection::Descending => format!("desc"),
+            SortDirection::Ascending => format!("asc"),
+        }
+    }
+
+    fn is_included(&self) -> bool {
+        true
+    }
+}
+
+impl std::fmt::Display for SortDirection {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SortDirection::Descending => write!(f, "Descending order"),
+            SortDirection::Ascending => write!(f, "Ascending order"),
+        }
     }
 }
 
@@ -379,7 +548,7 @@ pub struct AO3QueryBuilder {
     title: String,
 
     /// Author or creator of the work
-    author: String,
+    authors: MultiString,
 
     /// Date on which it was last updated or (if not updated at all) posted,
     date: DateRange,
@@ -397,36 +566,43 @@ pub struct AO3QueryBuilder {
     word_count: NumericalValueRange,
 
     /// Fandoms
-    fandoms: Fandoms,
+    fandoms: MultiString,
 
     /// Rating
     rating: Rating,
 
     /// Archive warnings
-    archive_warnings: ArchiveWarnings,
-}
+    archive_warnings: MultiSelect<ArchiveWarning>,
 
-/// Rating given to a specific work
-#[derive(Debug, Default, PartialEq, Eq, Clone)]
-pub enum Rating {
-    /// We don't care what the rating is
-    #[default]
-    None,
+    /// Categories
+    categories: MultiSelect<Category>,
 
-    /// Not rated fan fiction works
-    NotRated = 9,
+    /// Characters
+    characters: MultiString,
 
-    /// Fan fiction works for general audiences
-    General = 10,
+    /// Relationships
+    relationships: MultiString,
 
-    /// Fan fiction works for teens and up audiences
-    TeenAndUp = 11,
+    /// Additional Tags
+    additional_tags: MultiString,
 
-    /// Fan fiction works for mature audiences
-    Mature = 12,
+    /// Hits
+    hits: NumericalValueRange,
 
-    /// Fan fiction containing explicit content
-    Explicit = 13,
+    /// Kudos
+    kudos: NumericalValueRange,
+
+    /// Comments
+    comments: NumericalValueRange,
+
+    /// Bookmarks
+    bookmarks: NumericalValueRange,
+
+    /// Sort by
+    sort_by: SortBy,
+
+    /// Sort direction
+    sort_direction: SortDirection
 }
 
 impl AO3QueryBuilder {
@@ -441,17 +617,22 @@ impl AO3QueryBuilder {
         self
     }
 
-    pub fn get_title<'a>(&'a self) -> &'a str {
+    pub fn get_title(&self) -> &str {
         &self.title
     }
 
-    pub fn set_author(mut self, author: &dyn AsRef<str>) -> Self {
-        self.author = author.as_ref().to_string();
+    pub fn set_authors(mut self, authors: Vec<String>) -> Self {
+        self.authors = MultiString(authors);
         self
     }
 
-    pub fn get_author<'a>(&'a self) -> &'a str {
-        &self.author
+    pub fn push_author(mut self, author: String) -> Self {
+        self.authors.0.push(author);
+        self
+    }
+
+    pub fn get_authors(&self) -> String {
+        self.authors.to_string()
     }
 
     pub fn set_date_range(mut self, date: DateRange) -> Self {
@@ -508,7 +689,7 @@ impl AO3QueryBuilder {
         self
     }
 
-    pub fn is_single_chapter<'a>(&'a self) -> &'a bool {
+    pub fn is_single_chapter(&self) -> &bool {
         &self.is_single_chapter
     }
 
@@ -522,11 +703,11 @@ impl AO3QueryBuilder {
     }
 
     pub fn set_fandoms(mut self, fandoms: Vec<String>) -> Self {
-        self.fandoms = Fandoms(fandoms);
+        self.fandoms = MultiString(fandoms);
         self
     }
 
-    pub fn add_fandom(mut self, fandom: &dyn AsRef<str>) -> Self {
+    pub fn push_fandom(mut self, fandom: &dyn AsRef<str>) -> Self {
         self.fandoms.0.push(fandom.as_ref().to_string());
         self
     }
@@ -541,12 +722,82 @@ impl AO3QueryBuilder {
     }
 
     pub fn set_archive_warnings(mut self, archive_warnings: Vec<ArchiveWarning>) -> Self {
-        self.archive_warnings = ArchiveWarnings(archive_warnings);
+        self.archive_warnings = MultiSelect(archive_warnings);
         self
     }
 
     pub fn add_archive_warning(mut self, archive_warning: ArchiveWarning) -> Self {
         self.archive_warnings.0.push(archive_warning);
+        self
+    }
+
+    pub fn set_categories(mut self, categories: Vec<Category>) -> Self {
+        self.categories = MultiSelect(categories);
+        self
+    }
+
+    pub fn push_category(mut self, category: Category) -> Self {
+        self.categories.0.push(category);
+        self
+    }
+
+    pub fn set_characters(mut self, characters: Vec<String>) -> Self {
+        self.characters = MultiString(characters);
+        self
+    }
+
+    pub fn push_character(mut self, character: String) -> Self {
+        self.characters.0.push(character);
+        self
+    }
+
+    pub fn set_relationships(mut self, relationships: Vec<String>) -> Self {
+        self.relationships = MultiString(relationships);
+        self
+    }
+
+    pub fn push_relationship(mut self, relationship: String) -> Self {
+        self.relationships.0.push(relationship);
+        self
+    }
+
+    pub fn set_additional_tags(mut self, additional_tags: Vec<String>) -> Self {
+        self.additional_tags = MultiString(additional_tags);
+        self
+    }
+
+    pub fn push_additional_tag(mut self, additional_tag: String) -> Self {
+        self.additional_tags.0.push(additional_tag);
+        self
+    }
+
+    pub fn set_hits(mut self, hits: NumericalValueRange) -> Self {
+        self.hits = hits;
+        self
+    }
+
+    pub fn set_kudos(mut self, kudos: NumericalValueRange) -> Self {
+        self.kudos = kudos;
+        self
+    }
+
+    pub fn set_comments(mut self, comments: NumericalValueRange) -> Self {
+        self.comments = comments;
+        self
+    }
+
+    pub fn set_bookmarks(mut self, bookmarks: NumericalValueRange) -> Self {
+        self.bookmarks = bookmarks;
+        self
+    }
+
+    pub fn set_sort_by(mut self, sort_by: SortBy) -> Self {
+        self.sort_by = sort_by;
+        self
+    }
+
+    pub fn set_sort_direction(mut self, sort_direction: SortDirection) -> Self {
+        self.sort_direction = sort_direction;
         self
     }
 
@@ -556,18 +807,109 @@ impl AO3QueryBuilder {
         self.send()
     }
 
+    fn create_url(&self) -> String {
+        let mut is_first = true;
+        let mut q = String::from(BASE_AO3_SEARCH_URL);
+        fn add_delim(q: &mut String, is_first: &mut bool) {
+            if !*is_first {
+                q.push_str("&");
+            }
+            *is_first = false;
+        }
+        if self.any_field.is_included() {
+            add_delim(&mut q, &mut is_first);
+            q.push_str(&format!("work_search[query]={}", self.any_field.to_query_value()))
+        }
+        if self.title.is_included() {
+            add_delim(&mut q, &mut is_first);
+            q.push_str(&format!("work_search[title]={}", self.title.to_query_value()))
+        }
+        if self.authors.is_included() {
+            add_delim(&mut q, &mut is_first);
+            q.push_str(&format!("work_search[authors]={}", self.authors.to_query_value()))
+        }
+        if self.date.is_included() {
+            add_delim(&mut q, &mut is_first);
+            q.push_str(&format!("work_search[revised_at]={}", self.date.to_query_value()))
+        }
+        if self.completion_status.is_included() {
+            add_delim(&mut q, &mut is_first);
+            q.push_str(&format!("\tcompletion_status: {}", self.completion_status))
+        };
+        if self.is_single_chapter.is_included() {
+            add_delim(&mut q, &mut is_first);
+            q.push_str(&format!("\tis single chapter: {}", self.is_single_chapter()))
+        }
+        if self.word_count.is_included() {
+            add_delim(&mut q, &mut is_first);
+            q.push_str(&format!("\tword count: {}", self.word_count))
+        }
+        if self.fandoms.is_included() {
+            add_delim(&mut q, &mut is_first);
+            q.push_str(&format!("\tfandoms: {}", self.fandoms))
+        }
+        if self.rating.is_included() {
+            add_delim(&mut q, &mut is_first);
+            q.push_str(&format!("\trating: {}", self.rating))
+        }
+        if self.archive_warnings.is_included() {
+            add_delim(&mut q, &mut is_first);
+            q.push_str(&format!("\tarchive warnings: {}", self.archive_warnings))
+        }
+        if self.categories.is_included() {
+            add_delim(&mut q, &mut is_first);
+            q.push_str(&format!("\tcategories: {}", self.categories))
+        }
+        if self.characters.is_included() {
+            add_delim(&mut q, &mut is_first);
+            q.push_str(&format!("\tcharacters: {}", self.characters))
+        }
+        if self.relationships.is_included() {
+            add_delim(&mut q, &mut is_first);
+            q.push_str(&format!("\trelationships: {}", self.relationships))
+        }
+        if self.additional_tags.is_included() {
+            add_delim(&mut q, &mut is_first);
+            q.push_str(&format!("\tadditional tags: {}", self.additional_tags))
+        }
+        if self.hits.is_included() {
+            add_delim(&mut q, &mut is_first);
+            q.push_str(&format!("\thits: {}", self.hits))
+        }
+        if self.kudos.is_included() {
+            add_delim(&mut q, &mut is_first);
+            q.push_str(&format!("\tkudos: {}", self.kudos))
+        }
+        if self.comments.is_included() {
+            add_delim(&mut q, &mut is_first);
+            q.push_str(&format!("\tcomments: {}", self.comments))
+        }
+        if self.bookmarks.is_included() {
+            add_delim(&mut q, &mut is_first);
+            q.push_str(&format!("\tbookmarks: {}", self.bookmarks))
+        }
+        add_delim(&mut q, &mut is_first);
+        q.push_str(&format!("\tSort by: {}", self.sort_by));
+        add_delim(&mut q, &mut is_first);
+        q.push_str(&format!("\tSort direction: {}", self.sort_direction));
+        q
+    }
+
     /// Send query
-    pub fn send(self) {}
+    pub fn send(self) {
+        self.create_url();
+
+    }
 }
 
 impl std::fmt::Display for AO3QueryBuilder {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "Query:")?;
-        if self.title != "" {
+        if self.title.is_included() {
             writeln!(f, "\ttitle: {}", self.title)?
         }
-        if self.author != "" {
-            writeln!(f, "\tauthor: {}", self.author)?
+        if self.authors.is_included() {
+            writeln!(f, "\tauthor: {}", self.authors)?
         }
         if self.date.is_included() {
             writeln!(f, "\tdate: {}", self.date)?
@@ -575,7 +917,9 @@ impl std::fmt::Display for AO3QueryBuilder {
         if self.completion_status.is_included() {
             writeln!(f, "\tcompletion_status: {}", self.completion_status)?
         };
-        writeln!(f, "\tis single chapter: {}", self.is_single_chapter())?;
+        if self.is_single_chapter.is_included() {
+            writeln!(f, "\tis single chapter: {}", self.is_single_chapter())?;
+        }
         if self.word_count.is_included() {
             writeln!(f, "\tword count: {}", self.word_count)?
         }
@@ -588,6 +932,32 @@ impl std::fmt::Display for AO3QueryBuilder {
         if self.archive_warnings.is_included() {
             writeln!(f, "\tarchive warnings: {}", self.archive_warnings)?
         }
+        if self.categories.is_included() {
+            writeln!(f, "\tcategories: {}", self.categories)?
+        }
+        if self.characters.is_included() {
+            writeln!(f, "\tcharacters: {}", self.characters)?
+        }
+        if self.relationships.is_included() {
+            writeln!(f, "\trelationships: {}", self.relationships)?
+        }
+        if self.additional_tags.is_included() {
+            writeln!(f, "\tadditional tags: {}", self.additional_tags)?
+        }
+        if self.hits.is_included() {
+            writeln!(f, "\thits: {}", self.hits)?
+        }
+        if self.kudos.is_included() {
+            writeln!(f, "\tkudos: {}", self.kudos)?
+        }
+        if self.comments.is_included() {
+            writeln!(f, "\tcomments: {}", self.comments)?
+        }
+        if self.bookmarks.is_included() {
+            writeln!(f, "\tbookmarks: {}", self.bookmarks)?
+        }
+        writeln!(f, "\tSort by: {}", self.sort_by)?;
+        writeln!(f, "\tSort direction: {}", self.sort_direction)?;
         std::fmt::Result::Ok(())
     }
 }
@@ -601,13 +971,6 @@ mod tests {
         println!(
             "{}",
             AO3QueryBuilder::new()
-                .set_date_range(DateRange::Exactly(5, Period::Years))
-                .set_fandoms(vec![
-                    String::from("Hello kitty island adventure"),
-                    String::from("Monster Hunter world")
-                ])
-                .add_fandom(&"fandom")
-                .set_archive_warnings(vec![ArchiveWarning::CreatureChoseNotToUseArchiveWarnings])
         );
     }
 }
