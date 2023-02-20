@@ -122,6 +122,43 @@ impl CompletionStatus {
     }
 }
 
+/// Crossover
+/// 
+/// Wether a fan fiction is a crossover or not
+/// ```rust
+/// use ao3rs::CrossoverStatus;
+/// 
+/// assert_eq!(String::from(""),  CrossoverQuery::Ignore.to_query_value()); // We don't care if there are crossovers
+/// assert_eq!(String::from("T"), CrossoverQuery::OnlyCrossover.to_query_value()); // Only works with crossovers
+/// assert_eq!(String::from("F"), CrossoverQuery::ExcludeCrossover.to_query_value()); // Only works without crossovers
+/// ```
+pub enum CrossoverQuery {
+    /// Don't care if there are crossovers
+    /// 
+    /// query value: empty string
+    Ignore,
+
+    /// Only works that feature crossovers
+    /// 
+    /// query value: T
+    OnlyCrossover,
+
+    /// Only works which do not have crossovers
+    ///
+    /// query value: F
+    ExcludeCrossover,
+}
+
+impl CrossoverQuery {
+    pub fn to_query_value(&self) -> String {
+        match self {
+            CrossoverQuery::Ignore => String::from(""),
+            CrossoverQuery::OnlyCrossover => String::from("T"),
+            CrossoverQuery::ExcludeCrossover => String::from("F"),
+        }
+    }
+}
+
 pub struct AO3QueryBuilder {
     any_field: String,
     title: String,
