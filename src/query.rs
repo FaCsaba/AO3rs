@@ -1,3 +1,5 @@
+use crate::parse::parse_search;
+
 const BASE_AO3_SEARCH_URL: &'static str = "https://archiveofourown.org/works/search?";
 
 trait QueryValue: std::fmt::Display {
@@ -274,29 +276,7 @@ impl std::fmt::Display for MultiString {
     }
 }
 
-/// Rating given to a specific work
-#[derive(Debug, Default, PartialEq, Eq, Clone)]
-pub enum Rating {
-    /// We don't care what the rating is
-    #[default]
-    None,
-
-    /// Not rated fan fiction works
-    NotRated = 9,
-
-    /// Fan fiction works for general audiences
-    General = 10,
-
-    /// Fan fiction works for teens and up audiences
-    TeenAndUp = 11,
-
-    /// Fan fiction works for mature audiences
-    Mature = 12,
-
-    /// Fan fiction containing explicit content
-    Explicit = 13,
-}
-
+use crate::models::{AO3Work, Rating};
 impl QueryValue for Rating {
     type Output = String;
 
@@ -539,8 +519,11 @@ impl std::fmt::Display for SortDirection {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct AO3QueryBuilder {
+    /// Query Limit
+    limit: usize,
+
     /// Searches everything
     any_field: String,
 
@@ -605,11 +588,45 @@ pub struct AO3QueryBuilder {
     sort_direction: SortDirection,
 }
 
+impl Default for AO3QueryBuilder {
+    fn default() -> Self {
+        Self {
+            limit: 20,
+            any_field: Default::default(),
+            title: Default::default(),
+            authors: Default::default(),
+            date: Default::default(),
+            completion_status: Default::default(),
+            crossover_status: Default::default(),
+            is_single_chapter: Default::default(),
+            word_count: Default::default(),
+            fandoms: Default::default(),
+            rating: Default::default(),
+            archive_warnings: Default::default(),
+            categories: Default::default(),
+            characters: Default::default(),
+            relationships: Default::default(),
+            additional_tags: Default::default(),
+            hits: Default::default(),
+            kudos: Default::default(),
+            comments: Default::default(),
+            bookmarks: Default::default(),
+            sort_by: Default::default(),
+            sort_direction: Default::default(),
+        }
+    }
+}
+
 impl AO3QueryBuilder {
     pub fn new() -> Self {
         AO3QueryBuilder {
             ..Default::default()
         }
+    }
+
+    pub fn set_search_limit(mut self, limit: usize) -> Self {
+        self.limit = limit;
+        self
     }
 
     pub fn set_title(mut self, title: &dyn AsRef<str>) -> Self {
@@ -808,7 +825,7 @@ impl AO3QueryBuilder {
         Ok(())
     }
 
-    fn create_url(&self) -> String {
+    fn create_url(&self, page: usize) -> String {
         let mut is_first = true;
         let mut q = String::from(BASE_AO3_SEARCH_URL);
         fn add_delim(q: &mut String, is_first: &mut bool) {
@@ -816,6 +833,10 @@ impl AO3QueryBuilder {
                 q.push_str("&");
             }
             *is_first = false;
+        }
+        if page != 1 {
+            add_delim(&mut q, &mut is_first);
+            q.push_str(&format!("page={}", page));
         }
         if self.any_field.is_included() {
             add_delim(&mut q, &mut is_first);
@@ -868,39 +889,63 @@ impl AO3QueryBuilder {
         }
         if self.word_count.is_included() {
             add_delim(&mut q, &mut is_first);
-            q.push_str(&format!("work_search[word_count]={}", self.word_count.to_query_value()))
+            q.push_str(&format!(
+                "work_search[word_count]={}",
+                self.word_count.to_query_value()
+            ))
         }
         if self.fandoms.is_included() {
             add_delim(&mut q, &mut is_first);
-            q.push_str(&format!("work_search[fandom_names]={}", self.fandoms.to_query_value()))
+            q.push_str(&format!(
+                "work_search[fandom_names]={}",
+                self.fandoms.to_query_value()
+            ))
         }
         if self.rating.is_included() {
             add_delim(&mut q, &mut is_first);
-            q.push_str(&format!("work_search[rating_ids]={}", self.rating.to_query_value()))
+            q.push_str(&format!(
+                "work_search[rating_ids]={}",
+                self.rating.to_query_value()
+            ))
         }
         if self.archive_warnings.is_included() {
-            self.archive_warnings.to_query_value().into_iter().for_each(|aw| {
-                add_delim(&mut q, &mut is_first);
-                q.push_str(&format!("work_search[archive_warning_ids][]={}", aw))
-            });
+            self.archive_warnings
+                .to_query_value()
+                .into_iter()
+                .for_each(|aw| {
+                    add_delim(&mut q, &mut is_first);
+                    q.push_str(&format!("work_search[archive_warning_ids][]={}", aw))
+                });
         }
         if self.categories.is_included() {
-            self.categories.to_query_value().into_iter().for_each(|cat| {
-                add_delim(&mut q, &mut is_first);
-                q.push_str(&format!("work_search[category_ids][]={}", cat))
-            });
+            self.categories
+                .to_query_value()
+                .into_iter()
+                .for_each(|cat| {
+                    add_delim(&mut q, &mut is_first);
+                    q.push_str(&format!("work_search[category_ids][]={}", cat))
+                });
         }
         if self.characters.is_included() {
             add_delim(&mut q, &mut is_first);
-            q.push_str(&format!("work_search[character_names]={}", self.characters.to_query_value()))
+            q.push_str(&format!(
+                "work_search[character_names]={}",
+                self.characters.to_query_value()
+            ))
         }
         if self.relationships.is_included() {
             add_delim(&mut q, &mut is_first);
-            q.push_str(&format!("work_search[relationship_name]={}", self.relationships.to_query_value()))
+            q.push_str(&format!(
+                "work_search[relationship_name]={}",
+                self.relationships.to_query_value()
+            ))
         }
         if self.additional_tags.is_included() {
             add_delim(&mut q, &mut is_first);
-            q.push_str(&format!("work_search[freeform_names]={}", self.additional_tags.to_query_value()))
+            q.push_str(&format!(
+                "work_search[freeform_names]={}",
+                self.additional_tags.to_query_value()
+            ))
         }
         if self.hits.is_included() {
             add_delim(&mut q, &mut is_first);
@@ -908,29 +953,49 @@ impl AO3QueryBuilder {
         }
         if self.kudos.is_included() {
             add_delim(&mut q, &mut is_first);
-            q.push_str(&format!("work_search[kudos_count]={}", self.kudos.to_query_value()))
+            q.push_str(&format!(
+                "work_search[kudos_count]={}",
+                self.kudos.to_query_value()
+            ))
         }
         if self.comments.is_included() {
             add_delim(&mut q, &mut is_first);
-            q.push_str(&format!("work_search[commets_count]={}", self.comments.to_query_value()))
+            q.push_str(&format!(
+                "work_search[commets_count]={}",
+                self.comments.to_query_value()
+            ))
         }
         if self.bookmarks.is_included() {
             add_delim(&mut q, &mut is_first);
-            q.push_str(&format!("work_search[bookmarks_count]={}", self.bookmarks.to_query_value()))
+            q.push_str(&format!(
+                "work_search[bookmarks_count]={}",
+                self.bookmarks.to_query_value()
+            ))
         }
         add_delim(&mut q, &mut is_first);
-        q.push_str(&format!("work_search[sort_column]={}", self.sort_by.to_query_value()));
+        q.push_str(&format!(
+            "work_search[sort_column]={}",
+            self.sort_by.to_query_value()
+        ));
         add_delim(&mut q, &mut is_first);
-        q.push_str(&format!("work_search[sort_direction]={}", self.sort_direction.to_query_value()));
+        q.push_str(&format!(
+            "work_search[sort_direction]={}",
+            self.sort_direction.to_query_value()
+        ));
         q
     }
 
     /// Send query
-    pub async  fn send(self) -> Result<String, Box<dyn std::error::Error>> {
-        let url = self.create_url();
-        let resp = reqwest::get(url).await?.text().await?;
-
-        Ok(resp)
+    pub async fn send(self) -> Result<Vec<AO3Work>, Box<dyn std::error::Error>> {
+        let page_needed = (self.limit as f64 / 20_f64).ceil() as usize;
+        let mut works = vec![];
+        for page in 1..=page_needed {
+            let url = self.create_url(page);
+            let resp = reqwest::get(url).await?.text().await?;
+            works.append(&mut parse_search(&resp)?);
+        }
+        works.truncate(self.limit);
+        Ok(works)
     }
 }
 
@@ -1003,8 +1068,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_query_builder() {
-        let q = AO3QueryBuilder::new().set_kudos(NumericalValueRange::LessThan(5)).set_rating(Rating::Explicit);
+        let q = AO3QueryBuilder::new()
+            .set_kudos(NumericalValueRange::LessThan(5))
+            .set_rating(Rating::Explicit)
+            .set_search_limit(25);
         println!("{}", q);
-        println!("{}", q.send().await.unwrap());
+        println!("{:?}", q.send().await.unwrap());
     }
 }
